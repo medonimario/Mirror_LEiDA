@@ -21,7 +21,6 @@ class EEGSourceReconstruction:
     """
     
     def __init__(self,
-                 raw_data_path,
                  source_path,
                  subjects_dir=None,
                  subject='fsaverage',
@@ -37,16 +36,13 @@ class EEGSourceReconstruction:
                  loose=1.0,
                  depth=0.8,
                  snr=3.0,
-                 # Noise covariance
-                 noise_cov_type='ad-hoc',  
                  # Logging / output options
                  save_plots=False,
-                 verbose=True):
+                 verbose=True,
+                 log_file=None):
         """
         Parameters
         ----------
-        raw_data_path : str
-            Directory where raw EEG data (e.g., .set files) is located.
         source_path : str
             Directory where to save forward solutions, inverse operators, 
             and final source-reconstructed files.
@@ -77,15 +73,12 @@ class EEGSourceReconstruction:
             Depth parameter for inverse operator.
         snr : float
             Signal-to-noise ratio for regularization. lambda2 = 1.0/snr^2.
-        noise_cov_type : str
-            Type of noise covariance to use: 'ad-hoc' or 'precomputed'.
         save_plots : bool
             Whether or not to save plots generated along the way.
         verbose : bool
             Verbose logging of progress.
         """
         
-        self.raw_data_path = raw_data_path
         self.source_path = source_path
         self.subjects_dir = subjects_dir
         self.subject = subject
@@ -104,7 +97,6 @@ class EEGSourceReconstruction:
         self.lambda2 = 1.0 / (snr ** 2)
         
         # Noise covariance
-        self.noise_cov_type = noise_cov_type
         self.noise_cov_ = None
         
         self.save_plots = save_plots
@@ -114,9 +106,16 @@ class EEGSourceReconstruction:
         self.epochs_ = None
         self.fwd_ = None
         self.inverse_operator_ = None
+
+        self.log_file = log_file
     
     def _log(self, message):
         """Utility logger method."""
+        # Always write to file if a log_file is provided
+        if self.log_file is not None:
+            with open(self.log_file, 'a') as lf:
+                lf.write(f"{message}\n")
+        # Also print to console if verbose is True
         if self.verbose:
             print(message)
 
@@ -135,6 +134,10 @@ class EEGSourceReconstruction:
         self._log(f"Setting montage: {self.montage}")
         montage = mne.channels.make_standard_montage(self.montage)
         epochs.set_montage(montage)
+
+        self._log(f"Cropping so tmin=0.0")
+        epochs.crop(tmin=0.0)
+        self._log(f"Empochs tmin: {epochs.tmin}, tmax: {epochs.tmax}")
         
         self._log(f"Loaded epochs with shape {epochs.get_data().shape}.")
         self.epochs_ = epochs
@@ -213,7 +216,7 @@ class EEGSourceReconstruction:
         self._log(f"Forward solution computed. Writing to {full_fwd_path}")
         mne.write_forward_solution(full_fwd_path, fwd, overwrite=True)
 
-    def compute_noise_covariance(self, baseline_times=None, baseline_raw=None):
+    def compute_noise_covariance(self, baseline_times=None, baseline_epochs=None):
         """
         Compute noise covariance matrix. Supports either an 'ad-hoc' method 
         or a data-driven approach using MNE's compute_covariance function.
@@ -222,34 +225,33 @@ class EEGSourceReconstruction:
         ----------
         baseline_times : tuple of float, optional
             Start and end times for baseline period (in seconds).
-            If None, `baseline_raw` must be provided.
-        baseline_raw : str, optional
-            Path to a raw EEG file for computing covariance.
+            If None, `baseline_epochs` must be provided.
+        baseline_epochs : str, optional
+            Path to a epochs EEG file for computing covariance.
             If None, `baseline_times` must be provided.
 
         Raises
         ------
         ValueError
-            If neither `baseline_times` nor `baseline_raw` is provided.
+            If neither `baseline_times` nor `baseline_epochs` is provided.
         """
 
-        if self.noise_cov_type == 'ad-hoc':
+        if baseline_times is None and baseline_epochs is None:
             self._log("Using ad-hoc noise covariance.")
             self.noise_cov_ = mne.make_ad_hoc_cov(self.epochs_.info)
-            return
+            return 
 
-        if baseline_times is None and baseline_raw is None:
-            raise ValueError("Either baseline_times or baseline_raw must be specified.")
+        if baseline_epochs:
+            self._log(f"Loading baseline from file: {baseline_epochs}")
+            baseline_epochs = mne.io.read_epochs_eeglab(baseline_epochs, verbose=self.verbose)
+            baseline_epochs.crop(tmax=-0.5)
+            self._log(f"Loaded baseline epochs with shape {baseline_epochs.get_data().shape}.")
 
-        if baseline_raw:
-            self._log(f"Loading baseline from file: {baseline_raw}")
-            raw_baseline = mne.io.read_raw_eeglab(baseline_raw, verbose=self.verbose)
-
-            # Set baseline times to the full duration of the raw file if not provided
-            tmin, tmax = raw_baseline.times[0], raw_baseline.times[-1] if baseline_times is None else baseline_times
+            # Set baseline times to the full duration of baseline_epochs
+            tmin, tmax = baseline_epochs.times[0], baseline_epochs.times[-1] if baseline_times is None else baseline_times
 
             self.noise_cov_ = mne.compute_covariance(
-                raw_baseline, tmin=tmin, tmax=tmax, method='empirical', verbose=self.verbose
+                baseline_epochs, tmin=tmin, tmax=tmax, method='empirical', verbose=self.verbose
             )
 
         elif isinstance(baseline_times, tuple):
@@ -379,6 +381,7 @@ class EEGSourceReconstruction:
                 mode='mean_flip', return_generator=False, verbose=False
             )
             label_ts[li, :] = roi_data[0, :]
+            self._log(f"Label {li+1}/{n_labels} processed: {label.name}")
             
         # 5) Reshape to [n_epochs, n_labels, n_times]
         label_ts_reshaped = label_ts.reshape(n_labels, n_epochs, n_times).transpose(1, 0, 2)
@@ -414,6 +417,14 @@ class EEGSourceReconstruction:
         full_out_path = os.path.join(self.source_path, out_fname)
         self._log(f"Saving ROI-level epochs to {full_out_path}")
         label_epochs.save(full_out_path, overwrite=True)
+
+    def quick_plot_noise_cov(self):
+        """(Optional) Quick plot of noise covariance matrix."""
+        if self.noise_cov_ is None:
+            raise RuntimeError("No noise covariance computed.")
+        self._log("Plotting noise covariance matrix...")
+        mne.viz.plot_cov(self.noise_cov_, info=self.epochs_.info, show=True)
+
     
     def quick_plot_sensors(self):
         """(Optional) Quick plot of sensor positions in 3D."""
@@ -438,92 +449,131 @@ class EEGSourceReconstruction:
                               show_axes=True,
                               dig='fiducials')
 
-    def plot_sensor_vs_roi(self, raw, roi_raw, sensor_name, roi_name, invert_roi=False):
+    def plot_sensor_vs_roi_epochs(self,
+                                sensor_epochs,
+                                roi_epochs,
+                                sensor_name,
+                                roi_name,
+                                invert_roi=False,
+                                epoch_idx=None):  # Made optional
         """
-        Example method to plot a sensor-level channel vs. a ROI-level time course.
-        
+        Plot a sensor-level channel vs. an ROI-level channel from MNE Epochs objects.
+        By default, concatenates all epochs to show the entire signal.
+
         Parameters
         ----------
-        raw : mne.io.RawArray
-            The concatenated sensor-level data.
-        roi_raw : mne.io.RawArray
-            The concatenated ROI-level data.
+        sensor_epochs : mne.Epochs
+            MNE Epochs containing sensor-level EEG data.
+        roi_epochs : mne.Epochs
+            MNE Epochs containing ROI-level data (e.g., from source reconstruction).
+            Each ROI should appear as a 'channel' in roi_epochs.ch_names.
         sensor_name : str
-            Name of the sensor in raw.ch_names.
+            Name of the sensor channel in sensor_epochs.ch_names.
         roi_name : str
-            Name of the ROI channel in roi_raw.ch_names.
+            Name of the ROI channel in roi_epochs.ch_names.
         invert_roi : bool
-            Whether to multiply the ROI signal by -1 before plotting 
-            (sometimes helpful to visually match phases).
+            Whether to multiply the ROI signal by -1 before plotting.
+        epoch_idx : int, optional
+            If provided, plot only this specific epoch. If None (default),
+            concatenate all epochs to show the entire signal.
         """
-        
-        if sensor_name not in raw.ch_names:
-            raise ValueError(f"Sensor channel {sensor_name} not in raw.")
-        if roi_name not in roi_raw.ch_names:
-            raise ValueError(f"ROI channel {roi_name} not in roi_raw.")
-        
-        sensor_idx = raw.ch_names.index(sensor_name)
-        roi_idx = roi_raw.ch_names.index(roi_name)
-        
-        sensor_signal = raw.get_data(picks=[sensor_idx])[0]
-        roi_signal = roi_raw.get_data(picks=[roi_idx])[0]
+
+        # Sanity checks
+        if sensor_name not in sensor_epochs.ch_names:
+            raise ValueError(f"Sensor channel '{sensor_name}' not found in sensor_epochs.")
+        if roi_name not in roi_epochs.ch_names:
+            raise ValueError(f"ROI channel '{roi_name}' not found in roi_epochs.")
+
+        # Get the channel indices
+        sensor_idx = sensor_epochs.ch_names.index(sensor_name)
+        roi_idx = roi_epochs.ch_names.index(roi_name)
+
+        # Extract the data
+        if epoch_idx is not None:
+            # Extract single epoch if specified
+            sensor_signal = sensor_epochs.get_data(picks=[sensor_idx])[epoch_idx, 0, :]
+            roi_signal = roi_epochs.get_data(picks=[roi_idx])[epoch_idx, 0, :]
+            time = sensor_epochs.times
+            title_suffix = f" (Epoch {epoch_idx})"
+        else:
+            # Concatenate all epochs
+            sensor_data = sensor_epochs.get_data(picks=[sensor_idx])[:, 0, :]  # [n_epochs, n_times]
+            roi_data = roi_epochs.get_data(picks=[roi_idx])[:, 0, :]  # [n_epochs, n_times]
+            
+            # Flatten across epochs
+            sensor_signal = sensor_data.reshape(-1)
+            roi_signal = roi_data.reshape(-1)
+            
+            # Create time vector that spans all epochs
+            epoch_time = sensor_epochs.times
+            n_epochs = len(sensor_epochs)
+            epoch_duration = epoch_time[-1] - epoch_time[0]
+            
+            # Create concatenated time array
+            time = np.zeros(len(sensor_signal))
+            for i in range(n_epochs):
+                start_idx = i * len(epoch_time)
+                end_idx = (i + 1) * len(epoch_time)
+                time[start_idx:end_idx] = epoch_time + i * epoch_duration
+            
+            title_suffix = f" (All {n_epochs} epochs concatenated)"
+
         if invert_roi:
             roi_signal *= -1
+
+        # Basic plot of the two time series (sensor vs. ROI)
         
-        sfreq = raw.info['sfreq']
-        n_times = sensor_signal.shape[0]
-        time = np.arange(n_times) / sfreq
-        
-        # Plot side by side
         fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
-        axes[0].plot(time, sensor_signal, color='blue')
-        axes[0].set_ylabel('Sensor amplitude (µV)')
-        axes[0].set_title(f'Sensor-level signal: {sensor_name}')
-        
-        axes[1].plot(time, roi_signal, color='green')
-        axes[1].set_ylabel('Source amplitude')
+
+        axes[0].plot(time, sensor_signal)
+        axes[0].set_ylabel('Sensor Amplitude')
+        axes[0].set_title(f"Sensor-level: {sensor_name}{title_suffix}")
+
+        axes[1].plot(time, roi_signal)
+        axes[1].set_ylabel('ROI Amplitude')
         axes[1].set_xlabel('Time (s)')
-        axes[1].set_title(f'Source-level signal: {roi_name}')
-        
+        axes[1].set_title(f"Source-level: {roi_name}{title_suffix}")
+
         plt.tight_layout()
         plt.show()
-        
-        # Also show normalized (z-score) signals for comparison
+
+        # Also plot normalized waveforms (z-scores) for easier comparison
         sensor_norm = zscore(sensor_signal)
         roi_norm = zscore(roi_signal)
-        
-        plt.figure(figsize=(12,5))
-        plt.plot(time, sensor_norm, label=f'{sensor_name} (Sensor)', linewidth=2)
-        plt.plot(time, roi_norm, label=f'{roi_name} (ROI)', linewidth=2)
-        plt.xlabel('Time (s)')
-        plt.ylabel('Z-scored amplitude')
-        plt.title('Normalized ROI vs. Sensor waveforms')
+
+        plt.figure(figsize=(12, 4))
+        plt.plot(time, sensor_norm, label=f"{sensor_name} (Sensor)", linewidth=1.5)
+        plt.plot(time, roi_norm, label=f"{roi_name} (ROI)", linewidth=1.5)
+        plt.title(f"Z-scored signals{title_suffix}")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Z-scored amplitude")
         plt.legend()
+        plt.tight_layout()
         plt.show()
+
 
 if __name__ == "__main__":
     # Example usage for subject 101, condition Coordination
     recon = EEGSourceReconstruction(
-        raw_data_path="../data/raw/",
-        source_path="../data/source_reconstruction/",
-        subjects_dir="~/mne_data/freesurfer/subjects",  # Or wherever your FS data is
+        source_path="data/source_reconstruction/",
+        subjects_dir="~/mne_data/MNE-fsaverage-data/",
         montage="standard_1005",
-        method="MNE",
+        method="dSPM",
         loose=1.0,
         depth=0.8,
         snr=3.0,
-        noise_cov_type='ad-hoc',
-        verbose=True
+        verbose=True,
+        log_file="source_reconstruction.txt"
     )
 
     # Load EEGLAB epochs
-    recon.load_epochs_eeglab(filename="../data/raw/PPT1/s_101_Coordination.set")
+    recon.load_epochs_eeglab(filename="data/raw/PPT1/s_101_Coordination.set")
 
     # Compute forward solution
     recon.compute_forward_solution(fwd_fname='fsaverage_64_fwd.fif', overwrite=False)
 
     # Compute noise covariance
-    recon.compute_noise_covariance(baseline_times=None, baseline_raw=None)
+    recon.compute_noise_covariance(baseline_times=None, baseline_epochs=None)
 
     # Make inverse operator
     recon.make_inverse_operator()
@@ -542,22 +592,19 @@ if __name__ == "__main__":
         out_fname='s_101_Coordination-source-epo.fif'
     )
 
+    # Quick plot noise covariance
+    # recon.quick_plot_noise_cov()
     # Quick plot sensor layout
     recon.quick_plot_sensors()
     # Quick plot alignment
     recon.quick_plot_alignment()
-    # Example of plotting sensor vs. ROI
-    recon.plot_sensor_vs_roi(
-        raw=recon.epochs_.get_data(),
-        roi_raw=label_ts_reshaped,
-        sensor_name='P1',
-        roi_name='superiorparietal-lh'
-    )
+    # Suppose you reloaded your ROI-level epochs into roi_epochs:
+    roi_epochs = mne.read_epochs("data/source_reconstruction/s_101_Coordination-source-epo.fif")
 
-
-
-
-
-
-
-
+    # Then call the new plotting method, e.g. for epoch index 4
+    recon.plot_sensor_vs_roi_epochs(
+        sensor_epochs=recon.epochs_,
+        roi_epochs=roi_epochs,
+        sensor_name='P1',                     # or any valid sensor in recon.epochs_.ch_names
+        roi_name='superiorparietal-lh',       # or any ROI label in roi_epochs.ch_names
+        invert_roi=False)
