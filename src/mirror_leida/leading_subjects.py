@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os
 import argparse
 from dotenv import load_dotenv
@@ -10,6 +12,9 @@ from datetime import datetime
 
 # Import your LEiDAEEGAnalyzer class
 from leida_eeg_analyzer import LEiDAEEGAnalyzer
+
+# Global variable for our "omitted.log" path
+omitted_log_path = None
 
 # ----------------------------------------------------------
 # Example usage:
@@ -28,6 +33,7 @@ def process_subject(ppt, pair_number, condition,
                     remove_edges, do_plots, verbose):
 
     """Compute LEiDA leading eigenvectors for a single subject/condition."""
+    omitted_log_path = os.path.join(leading_path, 'omitted.log')
     # s_number: The numeric subject code (101..144 for PPT1, 201..244 for PPT2)
     if ppt == 'PPT1':
         s_number = str(100 + pair_number)
@@ -43,12 +49,21 @@ def process_subject(ppt, pair_number, condition,
     log_message(log_file, f"Subject: {ppt}, {s_number}, Condition: {condition}")
     log_message(log_file, f"Method: {method}, Band: {freq_band}, Window size: {window_size}, remove_edges={remove_edges}")
 
+    # 1) Check existence of the source file
+    epo_fname = os.path.join(source_path, method, f"s_{s_number}_{condition}-source.fif")
+    if not os.path.exists(epo_fname):
+        print(f"Skipped missing file: {epo_fname}")
+        if omitted_log_path:
+            with open(omitted_log_path, 'a') as lf:
+                lf.write(f"{ppt} {s_number} {condition}\n")
+        log_message(log_file, f"File {epo_fname} does not exist; skipping.")
+        log_message(log_file, "===== LEiDA Processing End =====\n")
+        return
+
     try:
         # --------------------------------------------------
         # 1) Load epochs
         # --------------------------------------------------
-        # e.g. data/source/dSPM/s_101_Coordination-source-epo.fif
-        epo_fname = os.path.join(source_path, method, f"s_{s_number}_{condition}-source.fif")
         log_message(log_file, f"Loading {epo_fname}")
         epochs = mne.read_epochs(epo_fname, verbose='ERROR')
         data_3d = epochs.get_data()  # shape: (n_epochs, n_ROIs, n_timepoints)
@@ -91,7 +106,6 @@ def process_subject(ppt, pair_number, condition,
 
 
 def main():
-    # Load environment variables if using .env
     load_dotenv()
     data_dir = os.getenv("DATA_DIR", "./data")
     source_path = os.path.join(data_dir, "source")
@@ -128,7 +142,7 @@ def main():
     Parallel(n_jobs=-1)(
         delayed(process_subject)(
             ppt, pn, cond,
-            source_path=os.path.join(data_dir, 'source'),
+            source_path=source_path,
             leading_path=os.path.join(leading_path, args.method),
             method=args.method,
             freq_band=args.freq_band,
