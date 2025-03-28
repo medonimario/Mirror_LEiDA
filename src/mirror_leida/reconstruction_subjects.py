@@ -3,7 +3,7 @@ import argparse
 from dotenv import load_dotenv
 from joblib import Parallel, delayed
 
-from source_reconstruction import EEGSourceReconstruction
+from eeg_source_reconstruction import EEGSourceReconstruction
 
 # Load .env file
 load_dotenv()
