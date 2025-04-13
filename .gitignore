@@ -1,5 +1,6 @@
 docs/site/
 data/
+notebooks/kmeans/
 
 # test cache
 manual_test/
