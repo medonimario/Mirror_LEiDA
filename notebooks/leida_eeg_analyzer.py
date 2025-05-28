@@ -53,7 +53,7 @@ class LEiDAEEGAnalyzer:
     def __init__(self,
                  fs: float,
                  freq_band: str = 'alpha',
-                 window_size: int = 256,
+                 window_size: int = 32,
                  remove_edges: bool = True,
                  do_plots: bool = False,
                  verbose: bool = True):

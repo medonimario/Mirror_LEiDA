@@ -71,7 +71,7 @@ def process_subject(ppt, pair_number, condition,
         log_message(log_file, f"Empochs tmin: {epochs.tmin}, tmax: {epochs.tmax}")
         data_3d = epochs.get_data()  # shape: (n_epochs, n_ROIs, n_timepoints)
         fs = epochs.info['sfreq']
-        # window_size = int(fs / 8)
+        window_size = int(fs / 8)
 
         log_message(log_file, f"Data loaded. Shape = {data_3d.shape}, sfreq={fs}")
 
@@ -112,8 +112,8 @@ def process_subject(ppt, pair_number, condition,
 def main():
     load_dotenv()
     data_dir = os.getenv("DATA_DIR", "./data")
-    source_path = os.path.join(data_dir, "raw_spontaneous")
-    leading_path = os.path.join(data_dir, "leading_eeg_spontaneousW1")
+    source_path = os.path.join(data_dir, "raw")
+    leading_path = os.path.join(data_dir, "leading_eeg")
 
     # ------------------------------------------
     # Command-line arguments
@@ -121,7 +121,7 @@ def main():
     parser = argparse.ArgumentParser(description="Step2 LEiDA computation script")
     parser.add_argument('--freq_band', type=str, default='alpha', 
                         help="Frequency band: 'alpha', 'beta', 'gamma', etc.")
-    parser.add_argument('--window_size', type=int, default=256, # 32,
+    parser.add_argument('--window_size', type=int, default=32,
                         help="Size of each window in samples for dynamic PL calculation")
     parser.add_argument('--remove_edges', type=bool, default=False,
                         help="If set, skip the first and last window in each epoch for the LEiDA analysis.")
@@ -129,7 +129,6 @@ def main():
                         help="Enable diagnostic plots inside LEiDAEEGAnalyzer.")
     parser.add_argument('--verbose', type=bool, default=True,
                         help="Enable verbose output in LEiDAEEGAnalyzer.")
-    parser.add_argument('--conditions', type=str, nargs='+', default=['Coordination', 'Solo', 'Spontaneous'],)
     args = parser.parse_args()
 
     # Prepare output directory
@@ -138,7 +137,7 @@ def main():
 
     ppts = ['PPT1', 'PPT2']
     pair_numbers = list(range(1, 44))  # [1..43]
-    conditions = args.conditions
+    conditions = ['Coordination', 'Solo', 'Spontaneous']
 
     # Parallel call: process each combination
     Parallel(n_jobs=-1)(
