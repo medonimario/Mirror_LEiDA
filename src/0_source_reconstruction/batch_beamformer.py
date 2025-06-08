@@ -46,7 +46,7 @@ def process_subject(ppt, pair_number, condition):
     input_filename = os.path.join(raw_data_path, ppt, f'{file_identifier}.set')
 
     # 1. Construct the final output filename FIRST.
-    output_fname = os.path.join(output_dir, f'{file_identifier}-source-beamformer-epo.fif')
+    output_fname = os.path.join(output_dir, f'{file_identifier}-source.fif')
 
     # 2. Check if the output file already exists.
     if os.path.exists(output_fname):
