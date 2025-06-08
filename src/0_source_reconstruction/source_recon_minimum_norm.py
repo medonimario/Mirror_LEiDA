@@ -1,6 +1,7 @@
 import mne
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import r2_score
 import os
 from scipy.stats import zscore
 
@@ -175,6 +176,14 @@ class EEGSourceReconstruction:
         if self.fwd_ is not None and not overwrite:
             self._log("Forward solution already computed and overwrite=False. Skipping.")
             return
+        
+        # Resolve source_path and subjects_dir if they contain "~"
+        self.source_path = os.path.expanduser(self.source_path)
+        if self.subjects_dir is not None:
+            self.subjects_dir = os.path.expanduser(self.subjects_dir)
+
+        # Make sure the output directory exists
+        os.makedirs(self.source_path, exist_ok=True)
         
         # Attempt to load from file if exists and not overwriting
         full_fwd_path = os.path.join(self.source_path, fwd_fname)
@@ -551,6 +560,81 @@ class EEGSourceReconstruction:
         plt.tight_layout()
         plt.show()
 
+    # ---------------------------------------------------------------------
+    def assess_data_fit(self, *, pick_ori='vector', metric='r2'):
+        """
+        Quantify how well the inverse + forward model reproduce the sensor data.
+
+        This version forces 'MNE' at apply time so that `stc.data` are in Am,
+        which is required for a valid forward projection.
+
+        Parameters
+        ----------
+        pick_ori : {'vector', 'normal', None}
+            Orientation used when applying the inverse. Must match how the inverse
+            operator was created (i.e. if inverse was built loose=1.0, then pick_ori='vector').
+        metric : {'r2', 'corr'}
+            • 'r2'   → coefficient of determination (explained variance)
+            • 'corr' → Pearson correlation
+
+        Returns
+        -------
+        fit_per_channel : dict
+            Keys are channel names; values are the averaged fit metric
+            (across all epochs) for that channel.
+        """
+
+        # 1) Sanity checks
+        if self.inverse_operator_ is None or self.fwd_ is None or self.epochs_ is None:
+            raise RuntimeError("Need self.epochs_, self.fwd_, and self.inverse_operator_ first.")
+
+        # 2) Copy epochs, apply average-reference projection
+        epochs_ref = self.epochs_.copy()
+        epochs_ref.set_eeg_reference('average', projection=True)
+        epochs_ref.apply_proj()
+
+        # Extract data array: shape = (n_epochs, n_ch, n_times)
+        data_array = epochs_ref.get_data(picks='all')
+        n_epochs, n_ch, n_times = data_array.shape
+
+        # 3) Force MNE (raw current) at apply time, even if inverse was built as dSPM
+        stcs = mne.minimum_norm.apply_inverse_epochs(
+            epochs_ref,
+            self.inverse_operator_,
+            lambda2=self.lambda2,
+            method='MNE',            # <-- force raw‐current MNE output
+            pick_ori=pick_ori,
+            verbose=False
+        )
+
+        # 4) Loop over epochs: forward‐project and compare
+        fit_accumulator = np.zeros(n_ch)
+        for idx, stc in enumerate(stcs):
+            # (a) Forward‐project. Now stc.data is in Am (because method='MNE').
+            pred_evoked = mne.apply_forward(
+                self.fwd_, stc, info=epochs_ref.info, verbose=False
+            )
+            pred = pred_evoked.data  # shape = (n_ch, n_times)
+
+            # (b) Extract the projected original data
+            orig = data_array[idx]   # shape = (n_ch, n_times)
+
+            # (c) Compute metric per channel
+            if metric == 'r2':
+                scores = [r2_score(orig[ch], pred[ch]) for ch in range(n_ch)]
+            elif metric == 'corr':
+                scores = [np.corrcoef(orig[ch], pred[ch])[0, 1] for ch in range(n_ch)]
+            else:
+                raise ValueError("metric must be 'r2' or 'corr'")
+
+            fit_accumulator += np.asarray(scores)
+
+        # 5) Average over epochs and return dict
+        fit_accumulator /= n_epochs
+        return dict(zip(epochs_ref.ch_names, fit_accumulator))
+
+    # ──────────────────────────────────────────────────────────────────────────────
+
 
 if __name__ == "__main__":
     # Example usage for subject 101, condition Coordination
@@ -584,6 +668,15 @@ if __name__ == "__main__":
         parc='aparc',  # Desikan-Killiany
         pick_ori='vector' 
     )
+
+    # After you have epochs_, fwd_, inverse_operator_ ready
+    fit = recon.assess_data_fit(pick_ori='vector', metric='r2')
+
+    # Quick view: print best & worst channels
+    best = sorted(fit.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    worst = sorted(fit.items(), key=lambda kv: kv[1])[:5]
+    print("Best-explained sensors:", best)
+    print("Worst-explained sensors:", worst)
 
     # Save the epochs array
     recon.save_epochs_array(

@@ -3,7 +3,7 @@
 leida_occurrence_stats.py
 =========================
 
-Compute state-occurrence probabilities (per subject × condition × cluster)
+Compute state-occurrence probabilities (per subject x condition x cluster)
 for *every* K-means solution found in <results_root>/k_##/ and run pair-wise
 statistics with a **global** multiplicity correction.
 
@@ -12,7 +12,7 @@ Outputs
 results_root/
 └── stats_summary.csv                (#tests rows)
     k_##/
-        occurrence.npy               (n_subj × n_cond × k)
+        occurrence.npy               (n_subj x n_cond x k)
         stats.json                   {"cond1__cond2": [[p_raw,p_adj,sig], …]}
         summary_barplot.png
         cluster_C00.png  …           (topomap + raincloud for every cluster)
@@ -50,7 +50,7 @@ def _cli() -> argparse.Namespace:
     p.add_argument("--results", required=True, type=Path,
                    help="Folder that contains k_## sub-folders")
     p.add_argument("--data", required=True, type=Path,
-                   help="(unused at the moment – kept for compatibility)")
+                   help="(unused at the moment - kept for compatibility)")
     p.add_argument("--conditions", nargs="+",
                    default=["Coordination", "Solo", "Spontaneous"],
                 #    default=["SpontaneousSynchro", "SpontaneousNoSynchro"],
@@ -115,59 +115,6 @@ def topomap(ax: plt.Axes, center_vec: np.ndarray, info):
                          ch_groups=[pos_idx, other],
                          cmap=cmap, axes=ax, show=False,
                          show_names=True, linewidth=.5)
-
-# def raincloud(ax: plt.Axes,
-#               occ: np.ndarray,       # subj × cond
-#               conds: list[str],
-#               colors: dict[str,str],
-#               pair_p: dict[tuple[str,str], tuple[float,bool]],
-#               title: str):
-#     """
-#     Draw violin + box + scatter of occ[:,ci] for ci in conds,
-#     and if a pair is sig, annotate BOTH star and p-value.
-#     """
-#     n = len(conds)
-#     X = np.arange(n)
-#     ymax = np.nanmax(occ)
-
-#     # violins + boxes + points
-#     for i, cond in enumerate(conds):
-#         data = occ[:, i][~np.isnan(occ[:, i])]
-#         v = ax.violinplot(data, [i], widths=0.7, showmeans=True,
-#                           showmedians=False, showextrema=False)
-#         body = v["bodies"][0]
-#         verts = body.get_paths()[0].vertices
-#         verts[:,0] = np.clip(verts[:,0], i, i+0.4)
-#         body.set_facecolor(colors[cond]); body.set_alpha(.5); body.set_edgecolor("none")
-
-#         ax.boxplot(data, positions=[i-0.15], widths=0.12, vert=True,
-#                    showcaps=False, patch_artist=True,
-#                    boxprops=dict(facecolor=colors[cond],alpha=.7),
-#                    medianprops=dict(color='k'))
-#         ax.scatter(np.random.uniform(i-0.35,i-0.2,len(data)),
-#                    data, s=15, c="k", alpha=.6, zorder=2)
-
-#     # significance annotations
-#     y0, dy = ymax + 0.02, ymax * 0.06
-#     for idx, ((c1,c2),(p_adj,sig)) in enumerate(pair_p.items()):
-#         if not sig:
-#             continue
-#         x1, x2 = conds.index(c1), conds.index(c2)
-#         y = y0 + idx*dy
-#         ax.plot([x1,x1,x2,x2],[y,y+dy/3,y+dy/3,y], c="grey", lw=1.3)
-#         stars = "***" if p_adj<.001 else "**" if p_adj<.01 else "*"
-#         # big star
-#         ax.text((x1+x2)/2, y+dy/3, stars,
-#                 ha="center", va="bottom", color="r", fontsize=20)
-#         # numeric p-value
-#         ax.text((x1+x2)/2, y+dy/3, f"p={p_adj:.3g}",
-#                 ha="center", va="top", color="grey", fontsize=9)
-
-#     ax.set_xticks(X); ax.set_xticklabels(conds, fontsize=10)
-#     ax.set_ylabel("Occurrence", fontsize=11)
-#     ax.set_title(title, fontsize=12)
-#     ax.grid(axis="y", ls="--", alpha=.4)
-#     sns.despine(ax=ax, trim=True)
 
 def raincloud(ax: plt.Axes,
               occ: np.ndarray,       # subj × cond
@@ -244,43 +191,6 @@ def raincloud(ax: plt.Axes,
     ax.set_title(title, fontsize=12)
     ax.grid(axis="y", ls="--", alpha=.4)
     sns.despine(ax=ax, trim=True)
-
-
-
-# def barplot_all(folder: Path, occ: np.ndarray, conds: Sequence[str],
-#                 colors: dict[str,str], sig_any: list[bool], dpi=150):
-#     """Mean ± sem per cluster, grouped by condition."""
-#     k = occ.shape[-1]
-#     means = np.nanmean(occ, axis=0)                     # cond × k
-#     sem   = (np.nanstd(occ, axis=0) /
-#              np.sqrt(np.sum(~np.isnan(occ), axis=0)))   # cond × k
-
-#     width = .8 / len(conds)
-#     x     = np.arange(k)
-
-#     fig, ax = plt.subplots(figsize=(max(6, 1.3*k), 4))
-#     for ci, cond in enumerate(conds):
-#         ax.bar(x + (ci - .5*(len(conds)-1))*width,
-#                means[ci], width,
-#                yerr=sem[ci], capsize=3,
-#                color=colors[cond],
-#                label=cond)
-
-#     # put star over cluster if ANY pair is significant there
-#     for c, any_sig in enumerate(sig_any):
-#         if any_sig:
-#             ymax = (means[:,c] + sem[:,c]).max()
-#             ax.text(c, ymax + .02, "*", ha="center", va="bottom",
-#                     color="k", fontsize=14)
-
-#     ax.set_xticks(x); ax.set_xticklabels([f"C{c}" for c in x])
-#     ax.set_ylabel("Mean occurrence ± SEM")
-#     ax.set_title("Occurrence probability – all clusters")
-#     ax.legend(frameon=False, fontsize=8)
-#     sns.despine(ax=ax)
-#     fig.tight_layout()
-#     fig.savefig(folder / "summary_barplot.png", dpi=dpi)
-#     plt.close(fig)
 
 def barplot_all(folder: Path,
                 occ: np.ndarray,             # subj × cond × k

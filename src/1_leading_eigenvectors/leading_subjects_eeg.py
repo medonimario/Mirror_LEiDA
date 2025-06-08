@@ -11,7 +11,8 @@ import sys
 from datetime import datetime
 
 # Import your LEiDAEEGAnalyzer class
-from leida_eeg_analyzer import LEiDAEEGAnalyzer
+# from leida_eeg_analyzer import LEiDAEEGAnalyzer
+from leida_eeg_analyzer_patched import LEiDAEEGAnalyzer
 
 # Global variable for our "omitted.log" path
 omitted_log_path = None
@@ -112,8 +113,10 @@ def process_subject(ppt, pair_number, condition,
 def main():
     load_dotenv()
     data_dir = os.getenv("DATA_DIR", "./data")
-    source_path = os.path.join(data_dir, "raw_spontaneous")
-    leading_path = os.path.join(data_dir, "leading_eeg_spontaneousW1")
+    # source_path = os.path.join(data_dir, "raw_spontaneous")
+    # leading_path = os.path.join(data_dir, "leading_eeg_spontaneousW1")
+    source_path = os.path.join(data_dir, "raw")
+    leading_path = os.path.join(data_dir, "leading_eegW1_D")
 
     # ------------------------------------------
     # Command-line arguments

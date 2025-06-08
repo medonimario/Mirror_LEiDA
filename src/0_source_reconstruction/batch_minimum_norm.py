@@ -3,25 +3,28 @@ import argparse
 from dotenv import load_dotenv
 from joblib import Parallel, delayed
 
-from eeg_source_reconstruction import EEGSourceReconstruction
+from source_recon_minimum_norm import EEGSourceReconstruction
 
 # Load .env file
 load_dotenv()
 data_dir = os.getenv("DATA_DIR")
 subjects_dir = os.getenv("SUBJECTS_DIR")
 
-raw_data_path = os.path.join(data_dir, 'raw')
-source_path = os.path.join(data_dir, 'source')
 
 parser = argparse.ArgumentParser(description='EEG Source Reconstruction')
 parser.add_argument('--method', type=str, default='dSPM', help='Reconstruction method to use')
+parser.add_argument('--raw_data_path', type=str, default='raw_eeg/raw_all', help='Path to the raw data directory.')
+parser.add_argument('--source_path', type=str, default='source/source_all', help='Path to the source directory.')
 parser.add_argument('--verbose', type=bool, default=True, help='Verbose output')
+parser.add_argument('--conditions', type=str, nargs='+', default=['Coordination', 'Solo', 'Spontaneous'], help='List of conditions to process. Default: ["Coordination", "Solo", "Spontaneous"]')
 
 args = parser.parse_args()
 
+raw_data_path = os.path.join(data_dir, args.raw_data_path)
+source_path = os.path.join(data_dir, args.source_path)
 ppts = ['PPT1', 'PPT2']
 pair_numbers = list(range(1, 44))
-conditions = ['Coordination', 'Solo', 'Spontaneous']
+conditions = args.conditions
 
 omitted_log_path = os.path.join(source_path, 'omitted.log')
 

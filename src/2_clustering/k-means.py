@@ -6,10 +6,10 @@ leida_batch_kmeans.py
 Run LEiDA-style K-means clustering for a *range* of K values (e.g. 4-20).
 
 Outputs for each K:
-    k_##/centers.npy         – cluster centroids  (K, n_channels)
-    k_##/counts.npy          – cluster sizes      (K,)
-    k_##/labels.pkl          – nested dict        {condition → subject → (n_epochs,n_windows)}
-    k_##/distances.npy       – point-to-centroid distances (rows, K)   [optional, can be huge]
+    k_##/centers.npy         - cluster centroids  (K, n_channels)
+    k_##/counts.npy          - cluster sizes      (K,)
+    k_##/labels.pkl          - nested dict        {condition → subject → (n_epochs,n_windows)}
+    k_##/distances.npy       - point-to-centroid distances (rows, K)   [optional, can be huge]
 A run-level manifest.json stores all parameters & file hashes.
 
 Requirements

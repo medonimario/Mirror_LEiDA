@@ -166,79 +166,48 @@ class LEiDAEEGAnalyzer:
 
     def _compute_windows(self, phases: np.ndarray, epoch_idx: int) -> np.ndarray:
         """
-        Subdivide the phases into windows, compute iFC, and extract leading eigenvectors.
-
-        Parameters
-        ----------
-        phases : ndarray, shape (n_channels, n_timepoints)
-            Instantaneous phases for one epoch.
-        epoch_idx : int
-            Index of the current epoch (used for optional plotting).
-
-        Returns
-        -------
-        lead_eigs : ndarray, shape (n_windows or n_windows-2, n_channels)
-            Leading eigenvectors for each window in this epoch.
+        Subdivide `phases` into non-overlapping windows of length `self.window_size`,
+        build the dynamic phase-locking (dPL) matrix for each window,
+        and return its leading eigenvector (unit-normalised, no sign flip).
         """
-        n_channels, T = phases.shape
-        window_size = self.window_size
+        n_chan, T = phases.shape
+        W = self.window_size
 
-        # Determine the segment start indices
-        rep_array = np.arange(0, T, window_size)
-        repetitions = len(rep_array)
+        # indices of LEFT edges of every complete window -----------------
+        starts = np.arange(0, T - W + 1, W)          # e.g. [0,256,512,...]
+        if len(starts) == 0:                         # epoch shorter than one window
+            return np.empty((0, n_chan))
 
-        # If there's an incomplete window at the end, discard it
-        if T % window_size != 0 and self.verbose:
-            print(f"Epoch {epoch_idx}: discarding last incomplete window.")
-        
-        # Figure out how many windows we'll actually compute
-        # If remove_edges=True, skip the first and last window indices
-        start_idx = 1 if self.remove_edges else 0
-        end_idx = (repetitions - 1) if self.remove_edges else repetitions
+        if self.remove_edges and len(starts) >= 3:   # need ≥3 windows to drop edges
+            starts = starts[1:-1]                    # drop first & last
 
-        lead_eig_list = []
+        lead_eigs = []
+        for s in starts:
+            seg = phases[:, s:s+W]                   # (n_chan, W)
 
-        # Loop over each window
-        for w_i in range(start_idx, end_idx):
-            # For window #w_i, we consider the phase data from rep_array[w_i-1] to rep_array[w_i], etc.
-            # But if we are removing edges, w_i will start from 1, so we do w_i-1 below carefully
-            if w_i == 0:
-                # If the user says remove_edges=False, we come here with w_i=0
-                start_sample = rep_array[w_i]
-                end_sample   = rep_array[w_i+1]
-            else:
-                # Typically (like the MATLAB code), each window is from rep_array[w_i-1] to rep_array[w_i]
-                start_sample = rep_array[w_i - 1]
-                end_sample   = rep_array[w_i]
+            # ---------- vectorised iFC  (no for-loops) -----------------
+            # pairwise phase-diff tensor: (n_chan, n_chan, W)
+            dphase = seg[:, None, :] - seg[None, :, :]
+            iFC = np.cos(dphase).mean(axis=-1)       # (n_chan, n_chan)
 
-            # Build dynamic phase-locking matrix for this window
-            iFC = np.zeros((n_channels, n_channels))
-            for n in range(n_channels):
-                for p in range(n_channels):
-                    # Mean cos of phase differences
-                    diffs = phases[n, start_sample:end_sample] - phases[p, start_sample:end_sample]
-                    iFC[n, p] = np.mean(np.cos(diffs))
+            # ---------- leading eigenvector ----------------------------
+            vals, vecs = np.linalg.eigh(iFC)         # ascending λ
+            v1 = vecs[:, -1]                         # largest eigenvalue
+            v1 /= np.linalg.norm(v1)                 # unit length
+            lead_eigs.append(v1)
 
-            # Leading eigenvector of iFC
-            vals, vecs = np.linalg.eigh(iFC)
-            idx_max = np.argmax(vals)
-            V1 = vecs[:, idx_max]
-
-            # Make sure the largest eigenvector is negative (as in the original code)
-            if np.mean(V1 > 0) > 0.5:
-                V1 = -V1
-            elif np.mean(V1 > 0) == 0.5 and np.sum(V1[V1 > 0]) > -np.sum(V1[V1 < 0]):
-                V1 = -V1
-
-            lead_eig_list.append(V1)
-
-            # Show the dPL plot only once: epoch 0, window = 10 (for example)
-            if self.do_plots and not self.did_plot_dpl and epoch_idx == 0 and w_i == 10:
-                self.plot_example_dpl(iFC, V1)
+            # optional one-off plot
+            if (
+                self.do_plots
+                and not self.did_plot_dpl
+                and epoch_idx == 0
+                and len(lead_eigs) == 11             # e.g. 10th window (0-based)
+            ):
+                self.plot_example_dpl(iFC, v1)
                 self.did_plot_dpl = True
 
-        lead_eigs = np.array(lead_eig_list)
-        return lead_eigs
+        return np.vstack(lead_eigs)                  # (n_windows, n_chan)
+
 
     def compute_leading_eigenvectors(self, data_3d: np.ndarray) -> np.ndarray:
         """
@@ -295,7 +264,7 @@ class LEiDAEEGAnalyzer:
         all_lead_eigs = np.stack(epoch_eig_list, axis=0)
 
         if self.verbose:
-            print(f"\nCompleted LEiDA. Output shape = {all_lead_eigs.shape} "
+            print(f"\nCompleted LEiDA!!! Output shape = {all_lead_eigs.shape} "
                   "(epochs x windows x channels).")
 
         return all_lead_eigs
