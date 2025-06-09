@@ -147,7 +147,9 @@ def run_diametrical_clustering(data: np.ndarray, K: int, n_init=50, max_iter=300
 
 def get_paths(args: argparse.Namespace) -> Tuple[Path, Path]:
     """Constructs input and output directories from command-line arguments."""
-    base_dir = Path(os.getenv("DATA_DIR", "./data"))
+    # base_dir = Path(os.getenv("DATA_DIR", "./data"))
+    base_dir = Path("/work3/s204684/SC2/data")
+    print(f"[INFO] Using base data directory: {base_dir}")
     
     # Construct input path
     if args.data_type == 'source':
@@ -169,7 +171,7 @@ def load_and_collate_data(input_dir: Path, conditions: List[str]) -> Tuple[np.nd
     data_dict: Dict[str, Dict[str, np.ndarray]] = {}
     print(f"[LOAD] Searching for eigenvectors in: {input_dir.resolve()}")
     
-    file_list = sorted(input_dir.glob("s_*_eigenvectors.npy"))
+    file_list = sorted(input_dir.glob("s_*-eigenvectors.npy"))
     if not file_list:
         raise FileNotFoundError(f"No eigenvector files found in {input_dir}")
         
