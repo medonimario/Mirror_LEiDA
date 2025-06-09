@@ -9,9 +9,7 @@ import mne
 import traceback
 import matplotlib.pyplot as plt
 
-# Make sure your analyzer class is in a file named 'leida_analyzer.py'
-# or adjust the import accordingly.
-from leida_analyzer import LEiDAEEGAnalyzer
+from leida_eeg_analyzer import LEiDAEEGAnalyzer
 
 # --- CONFIGURATION HELPER ---
 
@@ -26,7 +24,7 @@ def get_data_config(data_type, base_dir, comparison_type,  method, freq_band, wi
     if data_type == 'source':
         # For standard source reconstruction files (.fif)
         input_dir = os.path.join(base_dir, "source", f"source_{comparison_type}" ,method)
-        output_dir = os.path.join(base_dir, "leading_source", f"leading_source_{comparison_type}", method, f"{freq_band}_{window_size}")
+        output_dir = os.path.join(base_dir, "leading_source", f"{comparison_type}", method, f"{freq_band}_{window_size}")
         
         config['input_template'] = os.path.join(input_dir, "s_{s_number}_{condition}-source.fif")
         config['output_template'] = os.path.join(output_dir, "s_{s_number}_{condition}-eigenvectors.npy")
@@ -37,9 +35,9 @@ def get_data_config(data_type, base_dir, comparison_type,  method, freq_band, wi
         # For raw sensor-space data from EEGLAB (.set)
         # Note: This assumes a PPT1/PPT2 subdirectory structure for inputs.
         # The output path is simplified to be consistent.
-        input_dir_ppt1 = os.path.join(base_dir, "raw", f"raw_{comparison_type}", "PPT1")
-        input_dir_ppt2 = os.path.join(base_dir, "raw", f"raw_{comparison_type}", "PPT2")
-        output_dir = os.path.join(base_dir, "leading_eeg", f"leading_eeg_{comparison_type}", f"{freq_band}_{window_size}")
+        input_dir_ppt1 = os.path.join(base_dir, "raw_eeg", f"raw_{comparison_type}", "PPT1")
+        input_dir_ppt2 = os.path.join(base_dir, "raw_eeg", f"raw_{comparison_type}", "PPT2")
+        output_dir = os.path.join(base_dir, "leading_eeg", f"{comparison_type}", f"{freq_band}_{window_size}")
         
         config['input_template'] = {
             'PPT1': os.path.join(input_dir_ppt1, "s_{s_number}_{condition}.set"),
@@ -53,7 +51,7 @@ def get_data_config(data_type, base_dir, comparison_type,  method, freq_band, wi
     elif data_type == 'beamformer':
         # For beamformer source reconstruction files (.fif)
         input_dir = os.path.join(base_dir, "source", f"source_{comparison_type}", "beamformer")
-        output_dir = os.path.join(base_dir, "leading_source", f"leading_source_{comparison_type}", "beamformer" ,f"{freq_band}_{window_size}")
+        output_dir = os.path.join(base_dir, "leading_source", f"{comparison_type}", "beamformer" ,f"{freq_band}_{window_size}")
 
         config['input_template'] = os.path.join(input_dir, "s_{s_number}_{condition}-source-beamformer-epo.fif")
         config['output_template'] = os.path.join(output_dir, "s_{s_number}_{condition}-eigenvectors.npy")
