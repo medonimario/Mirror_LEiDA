@@ -116,7 +116,6 @@ class LEiDAEEGAnalyzer:
         """
         Construct bandpass filter coefficients for a Butterworth filter.
         """
-        from scipy.signal import butter
         nyquist = 0.5 * fs
         low = lowcut / nyquist
         high = highcut / nyquist
@@ -185,7 +184,7 @@ class LEiDAEEGAnalyzer:
         for s in starts:
             seg = phases[:, s:s+W]                   # (n_chan, W)
 
-            # ---------- vectorised iFC  (no for-loops) -----------------
+            # ---------- vectorised iFC  -----------------
             # pairwise phase-diff tensor: (n_chan, n_chan, W)
             dphase = seg[:, None, :] - seg[None, :, :]
             iFC = np.cos(dphase).mean(axis=-1)       # (n_chan, n_chan)
