@@ -4,6 +4,7 @@ notebooks/kmeans/
 
 # test cache
 manual_test/
+*.sh
 
 # other local dev info
 .vscode/

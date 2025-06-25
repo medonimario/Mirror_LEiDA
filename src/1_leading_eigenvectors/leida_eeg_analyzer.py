@@ -352,7 +352,7 @@ class LEiDAEEGAnalyzer:
 # ------------------ Main ------------------#
 if __name__ == "__main__":
     
-    epochs = mne.read_epochs("data/source/s_101_Coordination-source-epo.fif")
+    epochs = mne.read_epochs("data/archive/source/s_101_Coordination-source-epo.fif")
     data = epochs.get_data()
     print(f"Data shape: {data.shape}")  # Data shape: (87 epochs, 68 channels , 1280 samples)
     fs = epochs.info['sfreq']

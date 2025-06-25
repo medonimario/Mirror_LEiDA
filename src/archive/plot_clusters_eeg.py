@@ -74,6 +74,7 @@ def plot_pca_3d(out_png, X, labels, centers, max_points=1000, title=""):
         idx = np.array(idx)
         X, labels = X[idx], labels[idx]
 
+    # 3D PCA
     pca = PCA(n_components=3)
     Xp = pca.fit_transform(X)
     Cp = pca.transform(centers)
@@ -94,54 +95,144 @@ def plot_pca_3d(out_png, X, labels, centers, max_points=1000, title=""):
     fig.savefig(out_png, dpi=150)
     plt.close(fig)
 
+def plot_pca_2d(out_png, X, labels, centers, max_points=1000, title=""):
+    """
+    Projects X and centers into 2D via PCA and saves a scatter plot.
+    
+    Parameters
+    ----------
+    out_png : str
+        Path to output PNG file.
+    X : array-like, shape (n_samples, n_features)
+        The data points.
+    labels : array-like, shape (n_samples,)
+        Cluster or class labels for coloring.
+    centers : array-like, shape (n_clusters, n_features)
+        Coordinates of cluster centers in original feature space.
+    max_points : int, optional (default=1000)
+        Maximum total points to plot (subsample proportionally per label if exceeded).
+    title : str, optional
+        Plot title.
+    """
+    N = len(X)
+    if N > max_points:
+        idx = []
+        for k in np.unique(labels):
+            where = np.where(labels == k)[0]
+            take = max(1, int(max_points * len(where) / N))
+            idx.extend(np.random.choice(where, take, replace=False))
+        idx = np.array(idx)
+        X, labels = X[idx], labels[idx]
 
-def plot_centers_bar(out_png, centers, roi_names=None):
-    k, n = centers.shape
-    fig, axes = plt.subplots(k, 1, figsize=(min(10, n*.35), 1.5*k), sharex=False)
-    if k == 1:
-        axes = [axes]
-    for i, ax in enumerate(axes):
-        v = centers[i]
-        colors = ['red' if x >= 0 else 'blue' for x in v]
-        ax.bar(range(n), v, color=colors)
-        ax.axhline(0, color='k', lw=.8)
-        ax.set_ylabel(f"C{i}", rotation=0, labelpad=15, fontsize=7)
-        ax.tick_params(labelsize=6, length=2)
-        if roi_names is not None:
-            ax.set_xticks(range(n))
-            ax.set_xticklabels(roi_names, rotation=90, fontsize=5)
+    # 2D PCA
+    pca = PCA(n_components=2)
+    Xp = pca.fit_transform(X)
+    Cp = pca.transform(centers)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sc = ax.scatter(Xp[:, 0], Xp[:, 1],
+                    c=labels, cmap='rainbow', alpha=0.6, s=25,
+                    edgecolors='k', linewidths=0.2)
+    ax.scatter(Cp[:, 0], Cp[:, 1],
+               c=np.arange(len(centers)), cmap='rainbow',
+               marker='^', s=200, edgecolors='black', linewidths=1.2)
+
+    ax.set_title(title, fontsize=12)
+    ax.set_xlabel("PC1")
+    ax.set_ylabel("PC2")
+
+    # Explained variance annotation
+    var = pca.explained_variance_ratio_ * 100
+    ax.text(0.01, 0.99,
+            f"Explained var: PC1 {var[0]:.1f}%  |  PC2 {var[1]:.1f}%",
+            transform=ax.transAxes, va='top', fontsize=10)
+
+    # Colorbar
+    cbar = fig.colorbar(sc, ax=ax, fraction=0.04, pad=0.08)
+    cbar.set_label("cluster")
+
     fig.tight_layout()
     fig.savefig(out_png, dpi=150)
     plt.close(fig)
 
 
-# def plot_topomaps(out_png, centers, epochs):
-#     if mne is None:
-#         print("⚠︎  MNE-Python not installed → skipping topomaps")
-#         return
+# def plot_centers_bar(out_png, centers, roi_names=None):
 #     k, n = centers.shape
-#     n_rows, n_cols = int(np.ceil(k / 5)), 5
-#     fig, axes = plt.subplots(n_rows, n_cols, figsize=(10, 2*n_rows))
-#     axes = axes.flatten()
-#     for c in range(k):
-#         vec = centers[c]
-
-
-#         pos_idx = np.where(vec > 0)[0]
-#         print(f"We have {len(pos_idx)} positive-weight channels in C{c} "
-#               f"out of {n} total channels.")
-#         other   = [i for i in range(n) if i not in pos_idx]
-#         cmap = mcolors.ListedColormap(['red', 'lightgray'])
-#         mne.viz.plot_sensors(
-#             epochs.info, kind='topomap', show_names=False,
-#             ch_groups=[pos_idx, other], cmap=cmap,
-#             axes=axes[c], show=False, linewidth=.5)
-#         axes[c].set_title(f"C{c}", fontsize=9)
-#     for ax in axes[k:]:
-#         ax.axis("off")
+#     fig, axes = plt.subplots(k, 1, figsize=(min(10, n*.35), 1.5*k), sharex=False)
+#     if k == 1:
+#         axes = [axes]
+#     for i, ax in enumerate(axes):
+#         v = centers[i]
+#         colors = ['red' if x >= 0 else 'blue' for x in v]
+#         ax.bar(range(n), v, color=colors)
+#         ax.axhline(0, color='k', lw=.8)
+#         ax.set_ylabel(f"C{i}", rotation=0, labelpad=15, fontsize=7)
+#         ax.tick_params(labelsize=6, length=2)
+#         if roi_names is not None:
+#             ax.set_xticks(range(n))
+#             ax.set_xticklabels(roi_names, rotation=90, fontsize=5)
 #     fig.tight_layout()
 #     fig.savefig(out_png, dpi=150)
 #     plt.close(fig)
+
+def plot_centers_bar(out_png, centers, roi_names=None):
+    """
+    Plots cluster centers as horizontal bar charts, arranged side-by-side.
+    
+    This is ideal for a large number of ROIs, as the ROI names are listed
+    once on the shared y-axis.
+    """
+    # Ensure centers is a 2D array for consistency
+    if centers.ndim == 1:
+        centers = centers.reshape(1, -1)
+    
+    k, n = centers.shape
+    
+    # --- KEY CHANGES ---
+    # 1. Arrange subplots horizontally (1 row, k columns) and share the Y-axis.
+    #    The shared Y-axis will display our ROI names.
+    # 2. Adjust figsize: height now depends on the number of ROIs (n).
+    fig, axes = plt.subplots(1, k, figsize=(3 * k, max(4, 0.25 * n)), sharey=True)
+
+    # Handle the case of a single center (k=1)
+    if k == 1:
+        axes = [axes]
+
+    for i, ax in enumerate(axes):
+        v = centers[i]
+        colors = ['red' if x >= 0 else 'blue' for x in v]
+        
+        # 3. Use barh() for horizontal bars. y-positions are first, then widths.
+        ax.barh(range(n), v, color=colors, height=0.8)
+        
+        # 4. The zero-line is now vertical.
+        ax.axvline(0, color='k', lw=.8)
+        
+        # 5. Set a title for each subplot and a label for the x-axis.
+        ax.set_title(f"Center {i}", fontsize=10)
+        ax.set_xlabel("Value", fontsize=8)
+        ax.tick_params(axis='x', labelsize=7)
+        
+        # Invert y-axis to have the first ROI at the top
+        ax.invert_yaxis()
+
+    # --- SHARED Y-AXIS LABELING ---
+    # 6. Since the y-axis is shared, we only need to set the labels on the first plot.
+    if roi_names is not None and k > 0:
+        axes[0].set_yticks(range(n))
+        axes[0].set_yticklabels(roi_names, fontsize=8)
+    else:
+        # If no names, hide the y-ticks completely on the first plot.
+        # The others are already hidden by sharey=True.
+        axes[0].set_yticks([])
+
+    # Adjust layout and add a main title
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust rect to make space for suptitle
+    fig.suptitle("Cluster Center Profiles", fontsize=14)
+    
+    fig.savefig(out_png, dpi=150, bbox_inches='tight')
+    plt.close(fig)
 
 def plot_topomaps(out_png, centers, epochs):
     if mne is None:
@@ -150,8 +241,11 @@ def plot_topomaps(out_png, centers, epochs):
 
     k, n = centers.shape
     n_rows, n_cols = int(np.ceil(k / 5)), 5
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(10, 2 * n_rows))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, 4 * n_rows))
     axes = axes.flatten()
+    # get the biggest value in the centers for vlim
+    vmax = np.max(np.abs(centers))
+    vmin = -vmax
 
     for c in range(k):
         vec = centers[c]
@@ -162,7 +256,7 @@ def plot_topomaps(out_png, centers, epochs):
 
         # Count how many channels are truly > 0 (for info)
         n_pos = np.sum(vec > 0)
-        print(f"We have {n_pos} positive‐weight channels in C{c} out of {n} total channels.")
+        print(f"We have {n_pos} positive-weight channels in C{c} out of {n} total channels.")
 
         # Plot a continuous topomap of the positive‐only values
         #   - cmap="Reds" will go from white→red by intensity
@@ -173,9 +267,11 @@ def plot_topomaps(out_png, centers, epochs):
             axes=axes[c],
             show=False,
             sensors=True,
+            names=epochs.ch_names,
             # cmap="Reds",
             cmap='bwr',
-            vlim=(np.min(vec),np.max(vec)),
+            # vlim=(np.min(vec),np.max(vec)),
+            vlim=(vmin, vmax),
             contours=0,
         )
         axes[c].set_title(f"C{c}", fontsize=9)
@@ -204,12 +300,12 @@ def align_centers_sign(centers):
 def cli():
     p = argparse.ArgumentParser(description="Plot LEiDA K-means results")
     p.add_argument("--input",  required=True, type=Path,
-                   help="directory with *_eigenvectors.npy (to rebuild PCA)")
+                   help="directory with *-eigenvectors.npy (to rebuild PCA)")
     p.add_argument("--results", required=True, type=Path,
                    help="directory containing k_## folders from the batch run")
     p.add_argument("--k", type=int, nargs="+", default=None,
                    help="specific K values (default: all k_## dirs present)")
-    p.add_argument("--epochs", type=Path, default="data/raw/PPT1/s_101_Coordination.set",
+    p.add_argument("--epochs", type=Path, default="data/raw_eeg/raw_all/PPT1/s_101_Coordination.set",
                    help="an EEGLAB .set, FIF, or NPZ file with channel locations "
                         "(enables topomaps).")
     p.add_argument("--montage", type=str, default='biosemi64',
@@ -232,9 +328,15 @@ def main():
     # channel names for bar-plots
     roi_names = None
     if args.epochs:
-        ep = mne.io.read_epochs_eeglab(args.epochs)
-        ep.set_montage(args.montage)
-        roi_names = ep.ch_names
+        if args.epochs.suffix == ".fif":
+            # MNE-Python epochs in FIF format
+            ep = mne.read_epochs(args.epochs, preload=True)
+            roi_names = ep.ch_names
+        elif args.epochs.suffix == ".set" and mne is not None:
+            # EEGLAB epochs in .set format
+            ep = mne.io.read_epochs_eeglab(args.epochs)
+            ep.set_montage(args.montage)
+            roi_names = ep.ch_names
     elif args.montage and mne is not None:
         ep.set_montage(args.montage)
         info = mne.create_info(ch_names=[f"R{i}" for i in range(coll_eigs.shape[1])],
@@ -267,16 +369,24 @@ def main():
                                  for v in cond.values()])
 
         # ---------- plots ----------
-        plot_pca_3d(folder / "pca_clusters.png",
+        plot_pca_3d(folder / "clusters_pca3D.png",
                     coll_eigs, labels, centers,
-                    title=f"K={k} – PCA of Eigen-vectors")
+                    title=f"K={k} - PCA of Eigen-vectors")
+        
+        plot_pca_2d(folder / "clusters_pca2D.png",
+                    coll_eigs, labels, centers,
+                    title=f"K={k} - PCA of Eigen-vectors (2D)")
 
-        plot_centers_bar(folder / "centers_barplot.png",
+        plot_centers_bar(folder / "clusters_barplot.png",
                          centers, roi_names)
 
         if ep is not None:
-            plot_topomaps(folder / "centers_topomaps.png",
-                          centers, ep)
+            if len(ep.ch_names) == 64:
+                plot_topomaps(folder / "clusters_topomaps.png",
+                            centers, ep)
+            else:
+                print(f"⚠︎  {len(ep.ch_names)} channels in centers, "
+                      f"skipping topomaps (need 64 for {args.montage})")
 
         print(f"✓  plots written to {folder}")
 
